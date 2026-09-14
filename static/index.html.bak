@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body { font-family: 'Public Sans', Calibri, system-ui, sans-serif; }
+
+    /* ── Design tokens (light) ── */
+    #app {
+      --bg:            #f5f6f8;
+      --panel:         #ffffff;
+      --panel-2:       #fbfbfc;
+      --border:        #e7e9ee;
+      --border-strong: #d7dae1;
+      --text:          #1c1f26;
+      --text-muted:    #6a7280;
+      --text-faint:    #9aa1ac;
+      --accent:        #0e9f6e;
+      --accent-hover:  #0c8a60;
+      --accent-soft:   #e7f7f0;
+      --accent-ring:   rgba(14,159,110,0.20);
+      --accent-2:      #2563eb;
+      --accent-2-soft: #eaf1ff;
+      --accent-2-ring: rgba(37,99,235,0.18);
+      --user-bubble:   #2563eb;
+      --user-text:     #ffffff;
+      --shadow:        0 1px 2px rgba(20,25,40,0.04), 0 8px 24px rgba(20,25,40,0.05);
+      --shadow-sm:     0 1px 2px rgba(20,25,40,0.06);
+      --mono:          'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
+      /* shell */
+      display: flex; height: 100vh; width: 100%;
+      background: var(--bg); color: var(--text); overflow: hidden;
+    }
+    /* ── Dark overrides ── */
+    #app[data-theme="dark"] {
+      --bg:            #0e1117;
+      --panel:         #161a22;
+      --panel-2:       #1b2029;
+      --border:        #262c37;
+      --border-strong: #333a47;
+      --text:          #e7ecf3;
+      --text-muted:    #9aa3b2;
+      --text-faint:    #6b7484;
+      --accent:        #1fb886;
+      --accent-hover:  #28c692;
+      --accent-soft:   rgba(31,184,134,0.13);
+      --accent-ring:   rgba(31,184,134,0.28);
+      --accent-2:      #5b8cff;
+      --accent-2-soft: rgba(91,140,255,0.13);
+      --accent-2-ring: rgba(91,140,255,0.28);
+      --user-bubble:   #2f6fe6;
+      --shadow:        0 1px 2px rgba(0,0,0,0.30), 0 8px 24px rgba(0,0,0,0.35);
+      --shadow-sm:     0 1px 2px rgba(0,0,0,0.30);
+    }
+
+    /* ── Scrollbar ── */
+    #app ::-webkit-scrollbar { width: 10px; height: 10px; }
+    #app ::-webkit-scrollbar-thumb {
+      background: var(--border-strong); border-radius: 8px;
+      border: 3px solid transparent; background-clip: padding-box;
+    }
+    #app ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-faint); background-clip: padding-box;
+    }
+    #app textarea::placeholder { color: var(--text-faint); }
+
+    /* ── Animations ── */
+    @keyframes sqlfade  { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    @keyframes sqlblink { 0%,60%,100%{opacity:.25;transform:none} 30%{opacity:1;transform:translateY(-2px)} }
+    @keyframes sqlspin  { to { transform:rotate(360deg); } }
+
+    /* ══ SIDEBAR ══════════════════════════════════════════════════════════════ */
+    #sidebar {
+      flex: none; background: var(--panel); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width .22s cubic-bezier(.4,0,.2,1);
+    }
+    #sidebar.collapsed { width: 64px; align-items: center; padding: 14px 0; gap: 6px; }
+    #sidebar.expanded  { width: 268px; padding: 14px; }
+
+    .sb-btn {
+      width: 40px; height: 40px; border: none; background: transparent;
+      color: var(--text-muted); border-radius: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .sb-btn:hover { background: var(--panel-2); color: var(--text); }
+
+    .sb-new-rail {
+      width: 40px; height: 40px; margin-top: 4px;
+      border: 1px solid var(--border); background: var(--panel-2);
+      color: var(--accent); border-radius: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .12s, border-color .12s;
+    }
+    .sb-new-rail:hover { background: var(--accent-soft); border-color: var(--accent-ring); }
+
+    .sb-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--accent-2); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; flex: none; user-select: none;
+    }
+
+    /* expanded sidebar */
+    .sb-hdr     { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .sb-logo    { display:flex; align-items:center; gap:9px; }
+    .sb-logo-ic {
+      width:28px; height:28px; border-radius:8px; background:var(--accent);
+      display:flex; align-items:center; justify-content:center; flex:none;
+    }
+    .sb-logo-tx { font-weight:700; font-size:15px; letter-spacing:-.2px; }
+
+    .sb-col-btn {
+      width:32px; height:32px; border:none; background:transparent;
+      color:var(--text-muted); border-radius:8px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      transition: background .12s, color .12s;
+    }
+    .sb-col-btn:hover { background:var(--panel-2); color:var(--text); }
+
+    .sb-new-btn {
+      display:flex; align-items:center; gap:8px;
+      width:100%; padding:10px 12px;
+      border:1px solid var(--border-strong); background:var(--panel-2);
+      color:var(--text); border-radius:10px; cursor:pointer;
+      font-family:inherit; font-size:13.5px; font-weight:600;
+      transition:background .12s, border-color .12s, color .12s;
+    }
+    .sb-new-btn:hover { background:var(--accent-soft); border-color:var(--accent-ring); color:var(--accent); }
+
+    .sb-sec {
+      margin:18px 4px 8px; color:var(--text-faint);
+      font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+    }
+    .sb-recents { display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; min-height:0; }
+    .sb-rec {
+      display:flex; align-items:center; gap:9px;
+      width:100%; text-align:left; padding:9px 10px;
+      border:none; background:transparent; color:var(--text-muted);
+      border-radius:9px; cursor:pointer; font-family:inherit;
+      font-size:13px; overflow:hidden;
+      transition:background .1s, color .1s;
+    }
+    .sb-rec:hover        { background:var(--panel-2); color:var(--text); }
+    .sb-rec-active       { background:var(--accent-soft) !important; color:var(--accent) !important; }
+    .sb-rec-active svg   { opacity:1; }
+    .sb-rec svg  { flex:none; opacity:.7; }
+    .sb-rec span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    .sb-footer {
+      display:flex; align-items:center; gap:10px;
+      padding:10px 8px; margin-top:8px; border-top:1px solid var(--border);
+    }
+    .sb-foot-info { min-width:0; }
+    .sb-foot-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .sb-foot-sub  { font-size:11.5px; color:var(--text-faint); display:flex; align-items:center; gap:5px; }
+    .sb-dot       { width:6px; height:6px; border-radius:50%; background:#22c55e; flex:none; }
+
+    /* ══ MAIN COLUMN ══════════════════════════════════════════════════════════ */
+    #main { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+
+    /* ── Header ── */
+    #header {
+      height:60px; flex:none;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:0 20px; background:var(--bg); border-bottom:1px solid var(--border);
+    }
+    .hdr-left   { display:flex; align-items:center; gap:10px; }
+    .hdr-logo-ic {
+      width:30px; height:30px; border-radius:9px; background:var(--accent);
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:var(--shadow-sm); flex:none;
+    }
+    .hdr-logo-tx { line-height:1.1; }
+    .hdr-logo-nm { font-weight:700; font-size:15.5px; letter-spacing:-.2px; }
+    .hdr-logo-sb { font-size:11.5px; color:var(--text-faint); }
+
+    .theme-btn {
+      display:flex; align-items:center; gap:8px;
+      height:36px; padding:0 12px;
+      border:1px solid var(--border-strong); background:var(--panel);
+      color:var(--text-muted); border-radius:9px; cursor:pointer;
+      font-family:inherit; font-size:12.5px; font-weight:600; white-space:nowrap;
+      transition:background .12s, color .12s;
+    }
+    .theme-btn:hover { background:var(--panel-2); color:var(--text); }
+
+    /* ── Warmup banner ── */
+    #warmup-banner {
+      display:none; flex:none; align-items:center; justify-content:center; gap:10px;
+      padding:8px 20px; background:var(--panel-2); border-bottom:1px solid var(--border);
+      font-size:12.5px; color:var(--text-muted);
+    }
+    .wu-spin {
+      width:12px; height:12px; flex:none;
+      border:2px solid var(--border-strong); border-top-color:#f59e0b;
+      border-radius:50%; animation:sqlspin .8s linear infinite;
+    }
+    .wu-em { color:#d97706; font-weight:600; }
+
+    /* ── Chat scroll ── */
+    #chat-scroll { flex:1; overflow-y:auto; padding:28px 20px 12px; }
+    .msgs {
+      max-width:760px; margin:0 auto;
+      display:flex; flex-direction:column; gap:22px;
+      min-height:100%;
+    }
+
+    /* ── User message ── */
+    .msg-user { display:flex; justify-content:flex-end; animation:sqlfade .2s ease both; }
+    .msg-user-bubble {
+      max-width:78%; background:var(--user-bubble); color:var(--user-text);
+      padding:11px 15px; border-radius:14px 14px 4px 14px;
+      font-size:14.5px; line-height:1.55;
+      white-space:pre-wrap; word-break:break-word;
+      box-shadow:var(--shadow-sm);
+    }
+
+    /* ── Assistant message ── */
+    .msg-bot { display:flex; gap:12px; align-items:flex-start; animation:sqlfade .2s ease both; }
+    .bot-av {
+      width:30px; height:30px; flex:none; border-radius:8px; margin-top:2px;
+      background:var(--accent-2-soft); border:1px solid var(--accent-2-ring);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .bot-body { min-width:0; flex:1; }
+    .bot-card {
+      overflow:hidden;
+      color:var(--text); font-size:14.5px; line-height:1.65;
+    }
+    .bot-text { padding:2px 0 10px 0; white-space:pre-wrap; word-break:break-word; }
+    .ctx-tag {
+      display:inline-block; font-family:var(--mono); font-size:10px;
+      color:var(--accent); background:var(--accent-soft);
+      border:1px solid var(--accent-ring); border-radius:4px;
+      padding:1px 7px; letter-spacing:.04em; margin-bottom:8px;
+    }
+    .bot-actions {
+      display:flex; align-items:center; gap:4px; padding-left:2px;
+      max-height:0; overflow:hidden; opacity:0; margin-top:0;
+      transition:max-height 0.2s ease, opacity 0.15s, margin-top 0.15s;
+    }
+    .act-btn {
+      width:28px; height:28px; border:none; background:transparent;
+      color:var(--text-faint); border-radius:7px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .1s, color .1s;
+    }
+    .act-btn:hover { background:var(--panel-2); color:var(--text-muted); }
+    .act-btn.copied, .act-btn.speaking { color:var(--accent); }
+    .msg-bot:hover .stats-row {
+      max-height:40px; opacity:1; padding:2px 0 6px 0;
+    }
+    .msg-bot:hover .bot-actions {
+      max-height:40px; opacity:1; margin-top:7px;
+    }
+
+    /* ── Chart ── */
+    .chart-wrap {
+      padding:14px 16px; margin-bottom:10px;
+      border:1px solid var(--border); border-radius:10px; background:var(--panel-2);
+    }
+    .chart-hdr {
+      display:flex; align-items:center;
+      gap:8px; margin-bottom:10px;
+    }
+    .chart-lbl {
+      font-family:var(--mono); font-size:12px; letter-spacing:.05em;
+      text-transform:uppercase; color:var(--text); font-weight:700;
+    }
+    /* chart type selector */
+    .chart-types { display:flex; gap:3px; margin-left:auto; }
+    .ctype-btn {
+      width:27px; height:27px; border:1px solid var(--border);
+      background:transparent; color:var(--text-faint);
+      border-radius:6px; cursor:pointer; padding:0; flex:none;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .12s, color .12s, border-color .12s;
+    }
+    .ctype-btn:hover { background:var(--panel-2); color:var(--text-muted); }
+    .ctype-btn.active { background:var(--accent-soft); border-color:var(--accent-ring); color:var(--accent); }
+    /* ── CSS bar chart (horizontal) ── */
+    .csschart { display:flex; flex-direction:column; gap:9px; padding:2px 0; }
+    .csschart-row { display:flex; align-items:center; gap:10px; }
+    .csschart-lbl {
+      flex:none; width:96px; text-align:right;
+      font-size:11.5px; font-family:var(--mono); color:var(--text-muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .csschart-track {
+      flex:1; height:22px; border-radius:5px;
+      background:var(--panel-2); border:1px solid var(--border);
+      overflow:hidden; cursor:default;
+    }
+    @keyframes barGrowH { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+    .csschart-fill {
+      height:100%; width:var(--pct); min-width:3px;
+      background:var(--accent-2); opacity:.78;
+      border-radius:4px; transform-origin:left center;
+      animation:barGrowH 0.5s cubic-bezier(.4,0,.2,1) both;
+      transition:opacity 0.15s;
+    }
+    .csschart-track:hover .csschart-fill { opacity:1; }
+    .csschart-val {
+      flex:none; width:48px;
+      font-size:11px; font-family:var(--mono);
+      color:var(--text-muted); font-variant-numeric:tabular-nums;
+    }
+    /* ── Vertical bar chart ── */
+    .vbarchart { overflow-x:auto; }
+    .vbarchart-bars {
+      display:flex; align-items:flex-end; gap:10px;
+      height:200px; min-width:max-content; padding:20px 4px 0;
+    }
+    .vbarchart-col { display:flex; flex-direction:column; align-items:center; min-width:40px; flex:1 0 40px; }
+    @keyframes barGrowV { from{transform:scaleY(0)} to{transform:scaleY(1)} }
+    .vbarchart-bar {
+      width:70%; max-width:50px; min-height:3px;
+      background:var(--accent-2); opacity:.78;
+      border-radius:4px 4px 0 0; position:relative;
+      transform-origin:bottom center;
+      animation:barGrowV 0.5s cubic-bezier(.4,0,.2,1) both;
+      transition:opacity 0.15s; cursor:default;
+    }
+    .vbarchart-bar:hover { opacity:1; }
+    .vbarchart-val {
+      position:absolute; bottom:calc(100% + 3px); left:50%;
+      transform:translateX(-50%);
+      font-size:9.5px; font-family:var(--mono); color:var(--text-muted);
+      white-space:nowrap; pointer-events:none;
+    }
+    .vbarchart-lbl {
+      font-size:10.5px; font-family:var(--mono); color:var(--text-muted);
+      margin-top:5px; text-align:center; max-width:60px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    /* ── Donut chart ── */
+    .donutchart { display:flex; align-items:center; justify-content:center; gap:24px; padding:6px 0; flex-wrap:wrap; }
+    .donutchart-ring { width:148px; height:148px; border-radius:50%; flex:none; position:relative; }
+    .donutchart-hole { position:absolute; inset:33px; border-radius:50%; background:var(--panel-2); }
+    .donutchart-legend { display:flex; flex-direction:column; gap:7px; min-width:0; }
+    .donutchart-item { display:flex; align-items:center; gap:8px; }
+    .donutchart-dot { width:10px; height:10px; border-radius:50%; flex:none; }
+    .donutchart-name { font-size:12.5px; color:var(--text); font-weight:500; }
+    .donutchart-pct { font-size:11px; font-family:var(--mono); color:var(--text-muted); }
+    /* ── Lollipop chart ── */
+    .lollychart { display:flex; flex-direction:column; gap:9px; padding:2px 0; }
+    .lolly-row { display:flex; align-items:center; gap:10px; }
+    .lolly-lbl {
+      flex:none; width:96px; text-align:right;
+      font-size:11.5px; font-family:var(--mono); color:var(--text-muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .lolly-track { flex:1; height:22px; display:flex; align-items:center; overflow:hidden; }
+    .lolly-stem {
+      display:flex; align-items:center; height:100%; overflow:visible;
+      transition:width 0.5s cubic-bezier(.4,0,.2,1); min-width:0;
+    }
+    .lolly-line { flex:1; height:2px; background:var(--accent-2); opacity:0.4; min-width:0; border-radius:1px; }
+    .lolly-dot {
+      width:11px; height:11px; border-radius:50%; flex:none;
+      background:var(--accent-2); opacity:0.85; cursor:default;
+      transition:transform 0.15s, opacity 0.15s;
+    }
+    .lolly-dot:hover { transform:scale(1.3); opacity:1; }
+    .lolly-val {
+      flex:none; width:48px; font-size:11px; font-family:var(--mono);
+      color:var(--text-muted); font-variant-numeric:tabular-nums;
+    }
+    /* ── Data table ── */
+    .data-table-wrap {
+      overflow-x:auto; overflow-y:auto; max-height:380px;
+      border:1px solid var(--border); border-radius:10px 10px 0 0;
+    }
+    .data-table {
+      width:100%; border-collapse:collapse; font-size:13px;
+    }
+    .data-table th {
+      position:sticky; top:0; z-index:1;
+      background:var(--panel-2); color:var(--text-muted);
+      font-family:var(--mono); font-size:11px; font-weight:600;
+      letter-spacing:.04em; text-transform:uppercase;
+      padding:8px 14px; text-align:left; border-bottom:2px solid var(--border-strong);
+      white-space:nowrap;
+    }
+    .data-table td {
+      padding:7px 14px; border-bottom:1px solid var(--border);
+      color:var(--text-main); font-variant-numeric:tabular-nums;
+    }
+    .data-table tr:last-child td { border-bottom:none; }
+    .data-table tbody tr:hover td { background:var(--panel-2); }
+    .data-table td.num { text-align:right; font-family:var(--mono); font-size:12px; }
+
+    /* ── Data row ── */
+    .data-row {
+      display:flex; align-items:center; gap:10px;
+      padding:7px 14px; margin-bottom:10px;
+      border:1px solid var(--border); border-top:none;
+      border-radius:0 0 10px 10px; background:var(--panel-2);
+    }
+    .row-ct   { font-family:var(--mono); font-size:11px; color:var(--text-muted); }
+    .csv-btn  {
+      display:flex; align-items:center; gap:4px;
+      background:none; border:1px solid var(--border-strong); border-radius:5px;
+      color:var(--text-muted); font-family:var(--mono); font-size:11px;
+      padding:2px 8px; cursor:pointer; transition:color .15s, border-color .15s;
+    }
+    .csv-btn:hover { color:var(--accent); border-color:var(--accent-ring); }
+    .trunc-note { font-family:var(--mono); font-size:11px; color:#d97706; margin-left:auto; }
+
+    /* ── Stats footer ── */
+    .stats-row {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      padding:0; overflow:hidden; max-height:0; opacity:0;
+      transition:max-height 0.2s ease, opacity 0.15s, padding 0.15s;
+    }
+    .stat { display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11px; color:var(--text-faint); font-variant-numeric:tabular-nums; }
+    .stat-v { color:var(--text-muted); }
+    .cached-pill {
+      margin-left:auto; background:var(--accent-soft); color:var(--accent);
+      border:1px solid var(--accent-ring); border-radius:10px;
+      font-family:var(--mono); font-size:10px; padding:1px 7px; letter-spacing:.04em;
+    }
+
+    /* ── Typing indicator ── */
+    .msg-typing { display:flex; gap:12px; align-items:flex-start; animation:sqlfade .2s ease both; }
+    .typing-dots {
+      padding:6px 4px; display:flex; gap:5px; align-items:center;
+    }
+    .td {
+      width:7px; height:7px; border-radius:50%; background:var(--text-faint);
+      animation:sqlblink 1.2s infinite;
+    }
+    .td:nth-child(2) { animation-delay:.2s; }
+    .td:nth-child(3) { animation-delay:.4s; }
+
+    /* ── Suggestions ── */
+    .suggestions { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+    .suggestions-lbl {
+      font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+      color:var(--text-faint); margin-bottom:2px;
+    }
+    @keyframes chipIn {
+      from { opacity:0; transform:translateY(6px) scale(0.97); }
+      to   { opacity:1; transform:translateY(0)   scale(1);    }
+    }
+    .chip {
+      align-self:flex-start;
+      padding:8px 16px; border:1px solid var(--border-strong);
+      background:var(--panel); color:var(--text-muted);
+      border-radius:22px; cursor:pointer;
+      font-family:inherit; font-size:13px; font-weight:500;
+      max-width:600px; white-space:normal; text-align:left; line-height:1.45;
+      transition:background .12s, border-color .12s, color .12s;
+      opacity:0; animation:chipIn 0.22s ease forwards;
+    }
+    .chip:hover { background:var(--accent-soft); border-color:var(--accent-ring); color:var(--accent); }
+
+    /* ── Error card ── */
+    .err-card { flex:1; }
+    .err-lbl { display:none; }
+    .err-txt { font-size:14.5px; color:var(--text); line-height:1.65; word-break:break-word; padding:2px 0 10px 0; }
+
+    /* ── Cancelled ── */
+    .cxl-card {
+      flex:1; background:var(--panel); border:1px solid var(--border);
+      border-radius:4px 14px 14px 14px; padding:10px 14px;
+      display:flex; align-items:center; gap:7px;
+      font-size:12.5px; color:var(--text-faint);
+    }
+
+    /* ── Empty state ── */
+    #empty-state {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:10px; padding:40px 20px; text-align:center; flex:1;
+    }
+    .es-icon {
+      width:48px; height:48px; border-radius:14px;
+      background:var(--accent-soft); border:1px solid var(--accent-ring);
+      display:flex; align-items:center; justify-content:center; margin-bottom:4px;
+    }
+    #empty-state h2 { margin:0; font-size:16px; font-weight:600; color:var(--text-muted); }
+    #empty-state p  { margin:0; font-size:13.5px; max-width:320px; line-height:1.6; color:var(--text-faint); }
+    .es-examples { display:flex; flex-direction:column; gap:8px; margin-top:8px; width:100%; max-width:460px; }
+    .es-ex {
+      background:var(--panel); border:1px solid var(--border);
+      border-radius:10px; padding:11px 16px; color:var(--text-muted);
+      font-family:inherit; font-size:13.5px; text-align:left;
+      cursor:pointer; box-shadow:var(--shadow-sm);
+      transition:border-color .15s, color .15s, background .15s;
+    }
+    .es-ex:hover:not(:disabled) { border-color:var(--accent-ring); color:var(--text); background:var(--accent-soft); }
+    .es-ex:disabled { opacity:.4; cursor:not-allowed; }
+
+    /* ══ COMPOSER ═════════════════════════════════════════════════════════════ */
+    #composer-wrap { flex:none; padding:10px 20px 16px; background:var(--bg); }
+    .composer-inner { max-width:760px; margin:0 auto; }
+    .composer-box {
+      display:flex; align-items:flex-end; gap:10px;
+      background:var(--panel); border:1.5px solid var(--border-strong);
+      border-radius:16px; padding:8px 8px 8px 16px;
+      box-shadow:var(--shadow); transition:border-color .15s, box-shadow .15s;
+    }
+    .composer-box:focus-within {
+      border-color:var(--accent);
+      box-shadow:0 0 0 4px var(--accent-ring), var(--shadow);
+    }
+    #draft-input {
+      flex:1; border:none; outline:none; resize:none;
+      background:transparent; color:var(--text);
+      font-family:'Public Sans', Calibri, system-ui, sans-serif;
+      font-size:14.5px; line-height:1.6; padding:7px 0;
+      max-height:160px; overflow-y:auto;
+    }
+    .send-btn {
+      width:38px; height:38px; flex:none; border:none; border-radius:11px;
+      background:var(--accent); color:#fff; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:var(--shadow-sm); transition:background .12s, opacity .12s;
+    }
+    .send-btn:hover:not(:disabled) { background:var(--accent-hover); }
+    .send-btn:disabled { opacity:.45; cursor:not-allowed; }
+    .stop-btn {
+      width:38px; height:38px; flex:none; border-radius:11px;
+      background:rgba(220,38,38,.10); border:1px solid rgba(220,38,38,.25);
+      cursor:pointer; display:none;
+      align-items:center; justify-content:center; transition:background .12s;
+    }
+    .stop-btn:hover { background:rgba(220,38,38,.18); }
+    #app[data-theme="dark"] .stop-btn { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.25); }
+
+    .composer-hint {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      margin-top:9px; font-size:11.5px; color:var(--text-faint);
+    }
+    .composer-hint b { color:var(--text-muted); font-weight:600; }
+    .composer-hint-sep { opacity:.5; }
+
+    button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    @media (prefers-reduced-motion:reduce) {
+      *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; }
+    }
+
+    /* ── Category grid ── */
+    #empty-state { padding:24px 20px 32px; }
+    .cat-hint {
+      font-size:11px; font-weight:700; letter-spacing:.08em;
+      text-transform:uppercase; color:var(--text-muted);
+      margin:0 0 20px; text-align:center;
+    }
+    .cat-grid {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:10px; width:100%; max-width:680px;
+    }
+    @media (max-width:640px) { .cat-grid { grid-template-columns:repeat(2,1fr); } }
+    .cat-card {
+      display:flex; align-items:center; gap:12px;
+      padding:14px 16px; background:var(--panel);
+      border:1px solid var(--border); border-radius:12px;
+      cursor:pointer; text-align:left; font-family:inherit;
+      box-shadow:var(--shadow-sm);
+      transition:border-color .15s, background .15s, box-shadow .15s;
+    }
+    .cat-card:hover:not(:disabled) {
+      border-color:var(--accent-ring); background:var(--accent-soft);
+      box-shadow:0 0 0 3px var(--accent-ring);
+    }
+    .cat-card:disabled { opacity:.45; cursor:not-allowed; }
+    .cat-icon {
+      width:36px; height:36px; border-radius:9px; flex:none;
+      background:var(--accent-soft); border:1px solid var(--accent-ring);
+      display:flex; align-items:center; justify-content:center;
+      color:var(--accent);
+    }
+    .cat-info { min-width:0; text-align:left; }
+    .cat-title { font-size:13.5px; font-weight:600; color:var(--text); margin-bottom:2px; white-space:nowrap; }
+    .cat-sub { font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  </style>
+</head>
+<body>
+<div id="app" data-theme="light">
+
+  <aside id="sidebar" class="collapsed"></aside>
+
+  <div id="main">
+
+    <header id="header">
+      <div class="hdr-left">
+        <div class="hdr-logo-ic">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" aria-hidden="true">
+            <ellipse cx="12" cy="5" rx="7" ry="3"/>
+            <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/>
+            <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>
+          </svg>
+        </div>
+        <div class="hdr-logo-tx">
+          <div class="hdr-logo-nm">SQL Chatbot</div>
+          <div class="hdr-logo-sb">Ask questions about your data</div>
+        </div>
+      </div>
+      <button id="theme-btn" class="theme-btn" aria-label="Toggle theme"></button>
+    </header>
+
+    <div id="warmup-banner">
+      <div class="wu-spin"></div>
+      <span><span class="wu-em">Loading models</span> — SQL + narration engines warming up. Ready in ~3 min.</span>
+    </div>
+
+    <div id="chat-scroll" role="log" aria-live="polite" aria-label="Conversation">
+      <div class="msgs" id="msgs"></div>
+    </div>
+
+    <div id="composer-wrap">
+      <div class="composer-inner">
+        <div class="composer-box">
+          <textarea id="draft-input" rows="1" placeholder="Ask a question about the data…" aria-label="Message input"></textarea>
+          <button id="send-btn" class="send-btn" disabled aria-label="Send">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 19V5M5 12l7-7 7 7"/>
+            </svg>
+          </button>
+          <button id="stop-btn" class="stop-btn" aria-label="Stop generation">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="#dc2626"/>
+            </svg>
+          </button>
+        </div>
+        <div class="composer-hint" aria-hidden="true">
+          <span><b>Enter</b> to send</span>
+          <span class="composer-hint-sep">·</span>
+          <span><b>Shift+Enter</b> for new line</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #main -->
+</div><!-- #app -->
+
+<script>
+/* ─────────────────────────── Icons ─────────────────────────────────────── */
+const IC = {
+  db:      `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>`,
+  dbW:     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>`,
+  menu:    `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>`,
+  plus:    `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  coll:    `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>`,
+  chat:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+  copy:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
+  check:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>`,
+  up:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M7 10v11M2 21h15.3a2 2 0 0 0 2-1.7l1.4-9A2 2 0 0 0 18.7 8H14V4a2 2 0 0 0-2-2l-3 7v12"/></svg>`,
+  down:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" style="transform:rotate(180deg)" aria-hidden="true"><path d="M7 10v11M2 21h15.3a2 2 0 0 0 2-1.7l1.4-9A2 2 0 0 0 18.7 8H14V4a2 2 0 0 0-2-2l-3 7v12"/></svg>`,
+  speak:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`,
+  retry:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-4.27"/></svg>`,
+  sun:     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
+  moon:    `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`,
+  dl:      `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v6M2 4l3 3 3-3M1 8h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  clk:     `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6 3.5v3l2 1.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`,
+  tok:     `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 9l3-6 2 4 1.5-2.5L11 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+/* ─────────────────────────── State ──────────────────────────────────────── */
+let isReady = false, isLoading = false, ctrl = null, cardN = 0, sbOpen = false;
+let convHistory = [];
+let charQueue = [], charTimer = null;
+
+// Session model: one entry per conversation (like ChatGPT)
+const SESSIONS_KEY = 'sqlbot-sessions-v1';
+let sessions = [];          // [{id, title, messages:[{q,data}], ts}]
+let currentSessionId = null;
+
+try { sessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]'); } catch {}
+
+function saveSessions() {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)); } catch {}
+}
+
+function createSession(firstQuestion) {
+  const id = 'sess_' + Date.now();
+  sessions.unshift({ id, title: firstQuestion, messages: [], ts: Date.now() });
+  if (sessions.length > 50) sessions.pop();
+  saveSessions();
+  return id;
+}
+
+function addMsgToSession(q, data) {
+  if (!currentSessionId) return;
+  const sess = sessions.find(s => s.id === currentSessionId);
+  if (!sess) return;
+  const existing = sess.messages.find(m => m.q === q);
+  if (existing) existing.data = data;
+  else sess.messages.push({ q, data });
+  saveSessions();
+}
+
+/* ─────────────────────────── DOM refs ───────────────────────────────────── */
+const appEl     = document.getElementById('app');
+const sidebarEl = document.getElementById('sidebar');
+const themeBtn  = document.getElementById('theme-btn');
+const scrollEl  = document.getElementById('chat-scroll');
+const msgsEl    = document.getElementById('msgs');
+const inputEl   = document.getElementById('draft-input');
+const sendEl    = document.getElementById('send-btn');
+const stopEl    = document.getElementById('stop-btn');
+const warmupEl  = document.getElementById('warmup-banner');
+
+/* ─────────────────────────── Theme ──────────────────────────────────────── */
+(function initTheme() {
+  const saved = localStorage.getItem('sqlbot-theme');
+  if (saved === 'dark' || saved === 'light') appEl.dataset.theme = saved;
+})();
+
+function renderThemeBtn() {
+  const dark = appEl.dataset.theme === 'dark';
+  themeBtn.innerHTML = dark ? IC.sun + ' Light' : IC.moon + ' Dark';
+}
+renderThemeBtn();
+
+themeBtn.addEventListener('click', () => {
+  appEl.dataset.theme = appEl.dataset.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('sqlbot-theme', appEl.dataset.theme);
+  renderThemeBtn();
+});
+
+/* ─────────────────────────── Sidebar ───────────────────────────────────── */
+function renderSidebar() {
+  if (!sbOpen) {
+    sidebarEl.className = 'collapsed';
+    sidebarEl.innerHTML = `
+      <button class="sb-btn" id="sbt" title="Open sidebar" aria-label="Open sidebar">${IC.menu}</button>
+      <button class="sb-new-rail" id="sbn" title="New chat" aria-label="New chat">${IC.plus}</button>
+      <div style="flex:1"></div>
+      <div class="sb-avatar" title="Workspace">AK</div>`;
+    document.getElementById('sbt').onclick = () => { sbOpen = true;  renderSidebar(); };
+    document.getElementById('sbn').onclick = newChat;
+    return;
+  }
+  sidebarEl.className = 'expanded';
+  const recentHtml = sessions.length
+    ? sessions.slice(0, 30).map(s =>
+        `<button class="sb-rec${s.id === currentSessionId ? ' sb-rec-active' : ''}" title="${esc(s.title)}" data-sid="${esc(s.id)}">${IC.chat}<span>${esc(s.title)}</span></button>`
+      ).join('')
+    : `<span style="font-size:12px;color:var(--text-faint);padding:4px 10px">No chats yet</span>`;
+  sidebarEl.innerHTML = `
+    <div class="sb-hdr">
+      <div class="sb-logo">
+        <div class="sb-logo-ic">${IC.dbW}</div>
+        <span class="sb-logo-tx">SQL Chatbot</span>
+      </div>
+      <button class="sb-col-btn" id="sbt" title="Collapse" aria-label="Collapse sidebar">${IC.coll}</button>
+    </div>
+    <button class="sb-new-btn" id="sbn">${IC.plus} New chat</button>
+    <div class="sb-sec">Recent</div>
+    <div class="sb-recents" role="list">${recentHtml}</div>
+    <div class="sb-footer">
+      <div class="sb-avatar">AK</div>
+      <div class="sb-foot-info">
+        <div class="sb-foot-name">Analytics workspace</div>
+        <div class="sb-foot-sub"><span class="sb-dot"></span>citizens_db connected</div>
+      </div>
+    </div>`;
+  document.getElementById('sbt').onclick = () => { sbOpen = false; renderSidebar(); };
+  document.getElementById('sbn').onclick = newChat;
+  sidebarEl.querySelectorAll('.sb-rec').forEach(btn => {
+    const sid = btn.dataset.sid;
+    const sess = sessions.find(s => s.id === sid);
+    if (!sess) return;
+    btn.onclick = () => {
+      if (currentSessionId === sid) return; // already viewing this session
+      msgsEl.innerHTML = ''; hideEmptyState(); convHistory = [];
+      currentSessionId = sid;
+      if (sess.messages.length) {
+        sess.messages.forEach(m => { addUser(m.q); if (m.data) addBot(m.data, m.data.elapsed_ms || null); });
+      } else {
+        showEmptyState();
+      }
+      scrollBot();
+      renderSidebar(); // re-render to highlight active session
+      if (window.innerWidth < 700) { sbOpen = false; renderSidebar(); }
+    };
+  });
+}
+renderSidebar();
+
+/* ─────────────────────────── Empty state / Category grid ───────────────── */
+const SV = (p, extra='') =>
+  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${p}</svg>`;
+
+const CATEGORIES = [
+  { title:'District',       sub:'14 Kerala districts',
+    q:'How many citizens are there in each district?',
+    icon: SV('<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>') },
+  { title:'Gender',         sub:'Female, Male, Other',
+    q:'What is the gender distribution of citizens?',
+    icon: SV('<circle cx="11" cy="11" r="5"/><path d="M16 16l4 4M11 16v5M8 19h6"/>') },
+  { title:'Age',            sub:'Counts, averages, ranges',
+    q:'What is the average age of citizens?',
+    icon: SV('<path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>') },
+  { title:'Ration Card',    sub:'Types A, Y, B',
+    q:'How many citizens have each type of ration card?',
+    icon: SV('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>') },
+  { title:'Marital Status', sub:'Married, Single, Widowed, Divorced',
+    q:'What is the marital status distribution of citizens?',
+    icon: SV('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>') },
+  { title:'Disability',     sub:'Persons with/without disability',
+    q:'How many citizens have a disability?',
+    icon: SV('<circle cx="12" cy="5" r="2"/><path d="M12 7v5l3 3M9 17a4 4 0 1 0 8 0"/>') },
+  { title:'Education',      sub:'10th, 12th, Graduate, PG',
+    q:'What is the education level distribution of citizens?',
+    icon: SV('<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>') },
+  { title:'Religion',       sub:'Hindu, Muslim, Christian, etc.',
+    q:'What is the religion-wise distribution of citizens?',
+    icon: SV('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>') },
+  { title:'Category',       sub:'General, OBC, SC, ST',
+    q:'What is the distribution of citizens by social category?',
+    icon: SV('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>') },
+  { title:'Employment',     sub:'Employed, Self-employed, etc.',
+    q:'What is the employment type distribution of citizens?',
+    icon: SV('<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>') },
+  { title:'Income',         sub:'Average and ranges',
+    q:'What is the average annual income of citizens?',
+    icon: SV('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>') },
+  { title:'Vehicle',        sub:'Type, ownership, fuel',
+    q:'How many citizens own a vehicle?',
+    icon: SV('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>') },
+  { title:'Minority',       sub:'Minority status',
+    q:'How many citizens belong to minority communities?',
+    icon: SV('<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/>') },
+];
+
+function showEmptyState() {
+  if (document.getElementById('empty-state')) return;
+  const d = document.createElement('div');
+  d.id = 'empty-state';
+  const cards = CATEGORIES.map(cat =>
+    `<button class="cat-card"${isReady ? '' : ' disabled'} data-q="${esc(cat.q)}">
+       <div class="cat-icon">${cat.icon}</div>
+       <div class="cat-info">
+         <div class="cat-title">${esc(cat.title)}</div>
+         <div class="cat-sub">${esc(cat.sub)}</div>
+       </div>
+     </button>`
+  ).join('');
+  d.innerHTML = `<p class="cat-hint">Tap a category for quick answers, or type your own question.</p><div class="cat-grid">${cards}</div>`;
+  d.querySelectorAll('.cat-card').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!isReady || isLoading) return;
+      inputEl.value = btn.dataset.q;
+      autoGrow(); sendEl.disabled = false;
+      submit();
+    });
+  });
+  msgsEl.appendChild(d);
+}
+
+function hideEmptyState() {
+  document.getElementById('empty-state')?.remove();
+}
+
+/* ─────────────────────────── Warmup ────────────────────────────────────── */
+async function pollReady() {
+  try {
+    const { ready } = await (await fetch('/ready')).json();
+    if (ready) {
+      isReady = true;
+      warmupEl.style.display = 'none';
+      sendEl.disabled = !inputEl.value.trim();
+      document.querySelectorAll('.cat-card').forEach(b => { b.disabled = false; });
+      return;
+    }
+  } catch {}
+  warmupEl.style.display = 'flex';
+  setTimeout(pollReady, 4000);
+}
+pollReady();
+
+/* ─────────────────────────── Input handling ─────────────────────────────── */
+function autoGrow() {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+}
+
+function setInput(val) {
+  inputEl.value = val;
+  autoGrow();
+  sendEl.disabled = !val.trim() || isLoading;
+  inputEl.focus();
+}
+
+inputEl.addEventListener('input', () => {
+  autoGrow();
+  sendEl.disabled = !inputEl.value.trim() || isLoading;
+});
+
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendEl.disabled) submit(); }
+});
+
+sendEl.addEventListener('click', submit);
+stopEl.addEventListener('click', () => { ctrl?.abort(); ctrl = null; });
+
+function setLoading(on) {
+  isLoading = on;
+  sendEl.style.display  = on ? 'none' : 'flex';
+  stopEl.style.display  = on ? 'flex' : 'none';
+  sendEl.disabled = !inputEl.value.trim();
+  document.querySelectorAll('.cat-card').forEach(b => { b.disabled = on; });
+}
+
+/* ─────────────────────────── Helpers ───────────────────────────────────── */
+const scrollBot  = () => requestAnimationFrame(() => { scrollEl.scrollTop = scrollEl.scrollHeight; });
+const esc        = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtMs      = ms => ms >= 1000 ? (ms/1000).toFixed(1)+'s' : ms+'ms';
+
+function downloadCSV(cols, rows) {
+  const q = v => { const s = v==null?'':String(v); return s.includes(',')||s.includes('"')||s.includes('\n')?`"${s.replace(/"/g,'""')}"`:s; };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([[cols.map(q).join(','),...rows.map(r=>r.map(q).join(','))].join('\r\n')],{type:'text/csv'}));
+  a.download = 'results.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ─────────────────────────── Chart ─────────────────────────────────────── */
+const CHART_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#64748b'];
+
+function fmtChartVal(v) {
+  return v >= 1e7 ? (v/1e6).toFixed(0)+'M'
+       : v >= 1e6 ? (v/1e6).toFixed(1)+'M'
+       : v >= 1e3 ? (v/1e3).toFixed(1)+'k'
+       : v.toLocaleString();
+}
+
+function buildHBar(labels, vals) {
+  const mx = Math.max(...vals);
+  return `<div class="csschart">${labels.map((l,i) => {
+    const p = (vals[i]/mx*100).toFixed(2);
+    return `<div class="csschart-row">
+      <div class="csschart-lbl" title="${esc(l)}">${esc(l)}</div>
+      <div class="csschart-track" title="${esc(l)}: ${vals[i].toLocaleString()}">
+        <div class="csschart-fill" style="--pct:${p}%;animation-delay:${i*55}ms"></div>
+      </div>
+      <div class="csschart-val">${fmtChartVal(vals[i])}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function buildVBar(labels, vals) {
+  const mx = Math.max(...vals);
+  const BAR_MAX = 160;
+  return `<div class="vbarchart"><div class="vbarchart-bars">${labels.map((l,i) => {
+    const h = Math.max(3, Math.round(vals[i]/mx*BAR_MAX));
+    return `<div class="vbarchart-col">
+      <div class="vbarchart-bar" style="height:${h}px;animation-delay:${i*55}ms" title="${esc(l)}: ${vals[i].toLocaleString()}">
+        <span class="vbarchart-val">${fmtChartVal(vals[i])}</span>
+      </div>
+      <div class="vbarchart-lbl" title="${esc(l)}">${esc(l)}</div>
+    </div>`;
+  }).join('')}</div></div>`;
+}
+
+function buildDonut(labels, vals) {
+  const total = vals.reduce((a,b) => a+b, 0);
+  let cum = 0;
+  const stops = vals.map((v,i) => {
+    const s = (cum/total*100).toFixed(2); cum += v;
+    return `${CHART_COLORS[i%CHART_COLORS.length]} ${s}% ${(cum/total*100).toFixed(2)}%`;
+  }).join(',');
+  const legend = labels.map((l,i) => `<div class="donutchart-item">
+    <div class="donutchart-dot" style="background:${CHART_COLORS[i%CHART_COLORS.length]}"></div>
+    <div>
+      <div class="donutchart-name">${esc(l)}</div>
+      <div class="donutchart-pct">${fmtChartVal(vals[i])} · ${(vals[i]/total*100).toFixed(1)}%</div>
+    </div>
+  </div>`).join('');
+  return `<div class="donutchart">
+    <div class="donutchart-ring" style="background:conic-gradient(${stops})">
+      <div class="donutchart-hole"></div>
+    </div>
+    <div class="donutchart-legend">${legend}</div>
+  </div>`;
+}
+
+function buildLollipop(labels, vals) {
+  const mx = Math.max(...vals);
+  return `<div class="lollychart">${labels.map((l,i) => {
+    const p = (vals[i]/mx*100).toFixed(2);
+    return `<div class="lolly-row">
+      <div class="lolly-lbl" title="${esc(l)}">${esc(l)}</div>
+      <div class="lolly-track">
+        <div class="lolly-stem" data-w="${p}" style="width:0">
+          <div class="lolly-line"></div>
+          <div class="lolly-dot" title="${esc(l)}: ${vals[i].toLocaleString()}"></div>
+        </div>
+      </div>
+      <div class="lolly-val">${fmtChartVal(vals[i])}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderChartType(type, labels, vals, container) {
+  if (type === 'hbar')       container.innerHTML = buildHBar(labels, vals);
+  else if (type === 'vbar')  container.innerHTML = buildVBar(labels, vals);
+  else if (type === 'donut') container.innerHTML = buildDonut(labels, vals);
+  else if (type === 'lolly') {
+    container.innerHTML = buildLollipop(labels, vals);
+    requestAnimationFrame(() => {
+      container.querySelectorAll('.lolly-stem').forEach((el, i) => {
+        setTimeout(() => { el.style.width = el.dataset.w + '%'; }, i * 55);
+      });
+    });
+  }
+}
+
+const CT_ICONS = {
+  hbar:  `<svg width="13" height="10" viewBox="0 0 13 10" fill="currentColor"><rect rx="1" y="0" x="0" height="2.5" width="13"/><rect rx="1" y="3.75" x="0" height="2.5" width="9"/><rect rx="1" y="7.5" x="0" height="2.5" width="11"/></svg>`,
+  vbar:  `<svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor"><rect rx="1" x="0" y="4" width="3" height="8"/><rect rx="1" x="4" y="0" width="3" height="12"/><rect rx="1" x="8" y="6" width="3" height="6"/></svg>`,
+  donut: `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="3.5"><circle cx="6.5" cy="6.5" r="4.5"/></svg>`,
+  lolly: `<svg width="14" height="11" viewBox="0 0 14 11" fill="currentColor"><rect rx=".75" x="0" y="1.5" width="7" height="1.5"/><circle cx="9.5" cy="2.25" r="2.5"/><rect rx=".75" x="0" y="5.5" width="11" height="1.5"/><circle cx="13.5" cy="6.25" r="2.5"/><rect rx=".75" x="0" y="9.5" width="4" height="1.5"/><circle cx="6.5" cy="10.25" r="2.5"/></svg>`,
+};
+const CT_TITLES = { hbar:'Horizontal bars', vbar:'Vertical bars', donut:'Donut chart', lolly:'Lollipop' };
+
+function tryChart(parent, cols, rows) {
+  if (cols.length !== 2 || rows.length < 2 || rows.length > 50) return;
+  const vals = rows.map(r => Number(r[1]));
+  if (vals.some(isNaN)) return;
+  const labels = rows.map(r => String(r[0] ?? ''));
+  if (!Math.max(...vals)) return;
+
+  const typeBtns = Object.entries(CT_ICONS).map(([t, ic]) =>
+    `<button class="ctype-btn${t==='hbar'?' active':''}" data-ctype="${t}" title="${CT_TITLES[t]}">${ic}</button>`
+  ).join('');
+
+  const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
+  wrap.innerHTML = `<div class="chart-hdr">
+    <div class="chart-lbl">${esc(cols[0])} vs ${esc(cols[1])}</div>
+    <div class="chart-types">${typeBtns}</div>
+  </div>
+  <div class="chart-body"></div>`;
+
+  const body = wrap.querySelector('.chart-body');
+  renderChartType('hbar', labels, vals, body);
+
+  wrap.querySelectorAll('.ctype-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      wrap.querySelectorAll('.ctype-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderChartType(btn.dataset.ctype, labels, vals, body);
+    });
+  });
+
+  parent.appendChild(wrap);
+  return wrap;
+}
+
+/* ─────────────────────────── Stats row ─────────────────────────────────── */
+function statsHTML(data, clientMs) {
+  const ms   = clientMs ?? data.elapsed_ms ?? 0;
+  const tspl = data.sql_ms && data.response_ms;
+  const time = tspl ? `${fmtMs(data.sql_ms)} SQL · ${fmtMs(data.response_ms)} narr.` : fmtMs(ms);
+  const tot  = (data.tokens_in||0)+(data.tokens_out||0);
+  const tip  = `in ${(data.tokens_in||0).toLocaleString()} / out ${(data.tokens_out||0).toLocaleString()}`;
+  return `<div class="stats-row">
+    <div class="stat">${IC.clk}<span class="stat-v">${time}</span></div>
+    <div class="stat">${IC.tok}<span class="stat-v" title="${esc(tip)}">${tot>0?tot.toLocaleString()+' tokens':'—'}</span></div>
+    ${data.cached?'<span class="cached-pill">CACHED</span>':''}
+  </div>`;
+}
+
+/* ─────────────────────────── Bot avatar ────────────────────────────────── */
+const BOT_AV = ``;
+
+/* ─────────────────────────── Build bot card ────────────────────────────── */
+function buildCard(data, clientMs) {
+  const card = document.createElement('div');
+  card.className = 'bot-card';
+  card.id = `card-${++cardN}`;
+
+  const txt  = data.response_text || (data.rows?.length ? `${data.rows.length} result${data.rows.length!==1?'s':''} found.` : 'No results.');
+  const tDiv = document.createElement('div');
+  tDiv.className = 'bot-text'; tDiv.textContent = txt;
+  card.appendChild(tDiv);
+
+  const cols = data.columns||[], rows = data.rows||[];
+
+  // Table — show for multi-row results
+  if (cols.length > 0 && rows.length > 1) {
+    const wrap = document.createElement('div'); wrap.className = 'data-table-wrap';
+    const tbl  = document.createElement('table'); tbl.className = 'data-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr>' + cols.map(c =>
+      `<th>${esc(c.replace(/_/g,' '))}</th>`).join('') + '</tr>';
+    tbl.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      row.forEach(val => {
+        const td = document.createElement('td');
+        const isNum = val !== null && val !== '' && !isNaN(Number(val));
+        if (isNum) td.className = 'num';
+        td.textContent = val === null ? '—' : (isNum ? Number(val).toLocaleString() : val);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    card.appendChild(wrap);
+  }
+
+  const chartWrap = tryChart(card, cols, rows);
+
+  if (rows.length > 1) {
+    if (chartWrap) {
+      // CSV button lives in the chart header (top-right)
+      const csvBtn = document.createElement('button');
+      csvBtn.className = 'csv-btn'; csvBtn.innerHTML = `${IC.dl} CSV`;
+      csvBtn.addEventListener('click', () => downloadCSV(cols, rows));
+      const hdr = chartWrap.querySelector('.chart-hdr');
+      if (data.truncated) {
+        const note = document.createElement('span'); note.className = 'trunc-note'; note.textContent = 'first 500';
+        hdr.appendChild(note);
+      }
+      hdr.appendChild(csvBtn);
+    } else {
+      // No chart — data-row with CSV only (no row count)
+      const dr = document.createElement('div'); dr.className = 'data-row';
+      const trunc = data.truncated ? `<span class="trunc-note">first 500 shown</span>` : '';
+      dr.innerHTML = `<button class="csv-btn">${IC.dl} CSV</button>${trunc}`;
+      dr.querySelector('.csv-btn').addEventListener('click', () => downloadCSV(cols, rows));
+      card.appendChild(dr);
+    }
+  }
+  card.insertAdjacentHTML('beforeend', statsHTML(data, clientMs));
+
+  console.groupCollapsed(`[SQL Chatbot] ${data.question||''}`);
+  if (data.sql) console.log('SQL:', data.sql);
+  if (cols.length) { console.log('Cols:', cols); console.table(rows.slice(0,20)); }
+  console.log('ms:', data.elapsed_ms??clientMs, '| tokens:', (data.tokens_in||0)+(data.tokens_out||0));
+  console.groupEnd();
+
+  return card;
+}
+
+/* ─────────────────────────── Actions bar ───────────────────────────────── */
+function buildActions(text, question, botEl) {
+  const d = document.createElement('div'); d.className = 'bot-actions';
+  const hasTTS = !!window.speechSynthesis;
+  d.innerHTML = `
+    ${hasTTS ? `<button class="act-btn tts-btn" title="Read aloud" aria-label="Read aloud">${IC.speak}</button>` : ''}
+    <button class="act-btn cp-btn" title="Copy" aria-label="Copy response">${IC.copy}</button>
+    <button class="act-btn" title="Good response" aria-label="Good response">${IC.up}</button>
+    <button class="act-btn" title="Bad response"  aria-label="Bad response">${IC.down}</button>
+    ${question ? `<button class="act-btn retry-btn" title="Retry" aria-label="Retry">${IC.retry}</button>` : ''}`;
+
+  const cp = d.querySelector('.cp-btn');
+  cp.addEventListener('click', () => {
+    navigator.clipboard?.writeText(text).then(() => {
+      cp.innerHTML = IC.check; cp.classList.add('copied');
+      setTimeout(() => { cp.innerHTML = IC.copy; cp.classList.remove('copied'); }, 1800);
+    }).catch(() => {});
+  });
+
+  const ttsBtn = d.querySelector('.tts-btn');
+  if (ttsBtn) {
+    ttsBtn.addEventListener('click', () => {
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        ttsBtn.innerHTML = IC.speak; ttsBtn.classList.remove('speaking');
+        return;
+      }
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.onend = utt.onerror = () => { ttsBtn.innerHTML = IC.speak; ttsBtn.classList.remove('speaking'); };
+      ttsBtn.innerHTML = IC.speak; ttsBtn.classList.add('speaking');
+      window.speechSynthesis.speak(utt);
+    });
+  }
+
+  const retryBtn = d.querySelector('.retry-btn');
+  if (retryBtn && question && botEl) {
+    retryBtn.addEventListener('click', () => {
+      const children = Array.from(msgsEl.children);
+      const botIdx = children.indexOf(botEl);
+      let startIdx = botIdx;
+      for (let i = botIdx - 1; i >= 0; i--) {
+        if (children[i].classList.contains('msg-user')) { startIdx = i; break; }
+      }
+      while (msgsEl.children.length > startIdx) msgsEl.children[startIdx].remove();
+      // Trim conv history
+      for (let i = convHistory.length - 1; i >= 0; i--) {
+        if (convHistory[i].question === question) { convHistory = convHistory.slice(0, i); break; }
+      }
+      // Trim session storage
+      if (currentSessionId) {
+        const sess = sessions.find(s => s.id === currentSessionId);
+        if (sess) {
+          const mi = sess.messages.findIndex(m => m.q === question);
+          if (mi !== -1) { sess.messages = sess.messages.slice(0, mi); saveSessions(); }
+        }
+      }
+      inputEl.value = question;
+      submit();
+    });
+  }
+
+  return d;
+}
+
+/* ─────────────────────────── Append helpers ────────────────────────────── */
+function addUser(text) {
+  hideEmptyState();
+  const d = document.createElement('div'); d.className = 'msg-user';
+  d.innerHTML = `<div class="msg-user-bubble">${esc(text)}</div>`;
+  msgsEl.appendChild(d); scrollBot();
+}
+
+/* ── Character-by-character stream animation ──────────────────────────────── */
+function drainCharQueue() {
+  charTimer = null;
+  const el = document.getElementById('streaming-text');
+  if (!el || !charQueue.length) return;
+  el.textContent += charQueue.shift();
+  scrollBot();
+  charTimer = setTimeout(drainCharQueue, 30);
+}
+
+function resetCharStream() {
+  if (charTimer) { clearTimeout(charTimer); charTimer = null; }
+  charQueue = [];
+}
+
+function addTyping() {
+  const d = document.createElement('div'); d.className = 'msg-typing'; d.id = 'typing';
+  d.setAttribute('aria-label','Assistant is typing');
+  d.innerHTML = `${BOT_AV}<div class="typing-dots" aria-hidden="true"><span class="td"></span><span class="td"></span><span class="td"></span></div>`;
+  msgsEl.appendChild(d); scrollBot();
+}
+
+function removeTyping() { document.getElementById('typing')?.remove(); }
+
+function addBot(data, clientMs) {
+  removeTyping();
+  const d = document.createElement('div'); d.className = 'msg-bot';
+  d.innerHTML = BOT_AV;
+  const body = document.createElement('div'); body.className = 'bot-body';
+  body.appendChild(buildCard(data, clientMs));
+  body.appendChild(buildActions(data.response_text || '', data.question || '', d));
+  d.appendChild(body); msgsEl.appendChild(d); scrollBot();
+  if (data.suggestions?.length) addChips(data.suggestions);
+}
+
+function addConversational(text, question) {
+  removeTyping();
+  const d = document.createElement('div'); d.className = 'msg-bot';
+  d.innerHTML = BOT_AV;
+  const body = document.createElement('div'); body.className = 'bot-body';
+  const card = document.createElement('div'); card.className = 'bot-card';
+  const tDiv = document.createElement('div'); tDiv.className = 'bot-text';
+  tDiv.innerHTML = `<span class="ctx-tag">from context</span><br>${esc(text)}`;
+  card.appendChild(tDiv); body.appendChild(card);
+  body.appendChild(buildActions(text, question || '', d)); d.appendChild(body);
+  msgsEl.appendChild(d); scrollBot();
+}
+
+function addError(msg, question) {
+  removeTyping();
+  const d = document.createElement('div'); d.className = 'msg-bot';
+  d.innerHTML = BOT_AV;
+  const body = document.createElement('div'); body.className = 'bot-body';
+  const card = document.createElement('div'); card.className = 'bot-card';
+  const tDiv = document.createElement('div'); tDiv.className = 'bot-text';
+  tDiv.textContent = msg;
+  card.appendChild(tDiv);
+  body.appendChild(card);
+  body.appendChild(buildActions(msg, question || '', d));
+  d.appendChild(body);
+  msgsEl.appendChild(d); scrollBot();
+}
+
+function addCancelled() {
+  removeTyping();
+  const d = document.createElement('div'); d.className = 'msg-bot';
+  d.innerHTML = `${BOT_AV}<div class="cxl-card"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="var(--text-faint)"/></svg> Generation stopped.</div>`;
+  msgsEl.appendChild(d); scrollBot();
+}
+
+function addChips(suggestions) {
+  if (!suggestions?.length) return;
+  document.getElementById('chips')?.remove();
+  const d = document.createElement('div'); d.className = 'suggestions'; d.id = 'chips';
+  d.setAttribute('aria-label','Follow-up suggestions');
+  const lbl = document.createElement('div'); lbl.className = 'suggestions-lbl'; lbl.textContent = 'Suggested follow-ups';
+  lbl.style.cssText = `opacity:0;animation:chipIn 0.22s ease forwards;`;
+  d.appendChild(lbl);
+  suggestions.forEach((s, i) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = s; b.title = s;
+    b.style.animationDelay = `${(i + 1) * 75}ms`;
+    b.addEventListener('click', () => setInput(s));
+    d.appendChild(b);
+  });
+  msgsEl.appendChild(d); scrollBot();
+}
+
+/* ─────────────────────────── Conv context ───────────────────────────────── */
+function addToConv(q, sql, summary) {
+  convHistory.push({ question: q, sql: sql||'', result_summary: summary||'' });
+  if (convHistory.length > 10) convHistory.shift();
+}
+
+/* ─────────────────────────── Restore last session ───────────────────────── */
+function restoreChat() {
+  const sess = sessions[0];
+  if (!sess || !sess.messages.length) return;
+  currentSessionId = sess.id;
+  hideEmptyState();
+  sess.messages.forEach(m => { addUser(m.q); if (m.data) addBot(m.data, m.data.elapsed_ms || null); });
+}
+
+/* ─────────────────────────── New chat ──────────────────────────────────── */
+function newChat() {
+  msgsEl.innerHTML = ''; showEmptyState();
+  convHistory = []; currentSessionId = null;
+  inputEl.value = ''; inputEl.style.height = 'auto';
+  sendEl.disabled = false;
+  renderSidebar();
+  if (window.innerWidth < 700) { sbOpen = false; renderSidebar(); }
+}
+
+/* ─────────────────────────── Submit ────────────────────────────────────── */
+async function submit() {
+  const q = inputEl.value.trim();
+  if (!q || isLoading) return;
+  inputEl.value = ''; inputEl.style.height = 'auto';
+  setLoading(true);
+  resetCharStream();
+  addUser(q); addTyping();
+  // Create a new session on the first question; subsequent questions append to it
+  if (!currentSessionId) {
+    currentSessionId = createSession(q);
+    if (sbOpen) renderSidebar();
+  }
+  document.getElementById('chips')?.remove();
+
+  ctrl = new AbortController();
+  const t0 = performance.now();
+
+  try {
+    const res = await fetch('/query/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, history: convHistory.slice(-5), session_id: currentSessionId }),
+      signal: ctrl.signal,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      addError(err.detail || 'Request failed.', q); return;
+    }
+
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl+2);
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        try {
+          if (ev.type === 'conversational') {
+            addConversational(ev.response_text, q);
+            addToConv(q, '', ev.response_text);
+          } else if (ev.type === 'narration_token') {
+            if (!document.getElementById('streaming-text')) {
+              removeTyping();
+              const d = document.createElement('div');
+              d.className = 'msg-bot'; d.id = 'streaming-bubble';
+              d.innerHTML = `${BOT_AV}<div class="bot-body"><div class="bot-card"><div class="bot-text" id="streaming-text"></div></div></div>`;
+              msgsEl.appendChild(d);
+            }
+            // Push each character onto the queue; drainCharQueue animates them smoothly
+            charQueue.push(...ev.token.split(''));
+            if (!charTimer) drainCharQueue();
+          } else if (ev.type === 'done') {
+            resetCharStream();
+            document.getElementById('streaming-bubble')?.remove();
+            const ms = Math.round(performance.now()-t0);
+            ev.question = q;
+            addBot(ev, ms);
+            addToConv(q, ev.sql, ev.response_text||'');
+            addMsgToSession(q, {...ev, elapsed_ms: ms});
+          } else if (ev.type === 'suggestions') {
+            addChips(ev.suggestions);
+          } else if (ev.type === 'error') {
+            addError(ev.detail || 'An error occurred.', q);
+          }
+        } catch (renderErr) {
+          console.error('[render error]', renderErr, ev);
+          removeTyping();
+          addError('Failed to render response: ' + renderErr.message);
+        }
+        scrollBot();
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') addCancelled();
+    else { setInput(q); addError('Could not reach the server. Is it running?'); }
+  } finally {
+    ctrl = null; setLoading(false);
+  }
+}
+
+/* ─────────────────────────── Bootstrap ─────────────────────────────────── */
+showEmptyState();
+restoreChat();
+scrollBot();
+inputEl.focus();
+</script>
+</body>
+</html>
